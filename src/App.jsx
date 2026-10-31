@@ -97,13 +97,13 @@ function App() {
   const [reviews, setReviews] = useState(getSaved);
   const [search, setSearch] = useState('');
   const [courseSearch, setCourseSearch] = useState('');
-  const [lookupCode, setLookupCode] = useState('CSEN701');
+  const [courseSort, setCourseSort] = useState('default');
   const [rating, setRating] = useState('all');
+  const [reviewCourse, setReviewCourse] = useState('all');
   const [editor, setEditor] = useState(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [tab, setTab] = useState('Overview');
-  const [reviewScope, setReviewScope] = useState('all');
   const [activeCourseCode, setActiveCourseCode] = useState(readRoute);
 
   useEffect(() => {
@@ -135,33 +135,39 @@ function App() {
   const navigateTo = section => {
     if (window.location.hash) window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
     setActiveCourseCode(null);
-    setTab(section === 'reviews' ? 'Browse reviews' : 'Overview');
-    if (section === 'reviews') requestAnimationFrame(() => document.getElementById('review-list')?.scrollIntoView({behavior: 'smooth'}));
-    else window.scrollTo({top: 0, behavior: 'smooth'});
+    setTab(section === 'mine' ? 'Your reviews' : section === 'reviews' ? 'Browse reviews' : 'Overview');
+    window.scrollTo({top: 0, behavior: 'instant'});
   };
 
   const result = useMemo(() => reviews.filter(review => {
     const matchesRating = rating === 'all' || review.rating === Number(rating);
     const matchesSearch = `${review.courseCode} ${getCourse(review.courseCode).name} ${review.comment} ${review.name}`
       .toLowerCase().includes(search.trim().toLowerCase());
-    return matchesRating && matchesSearch && (reviewScope === 'all' || review.owner === 'you');
-  }), [reviews, rating, search, reviewScope]);
+    return matchesRating && matchesSearch && (reviewCourse === 'all' || review.courseCode.toUpperCase() === reviewCourse);
+  }), [reviews, rating, search, reviewCourse]);
 
   const courseList = useMemo(() => {
     const codes = [...new Set([...Object.keys(COURSE_CATALOG), ...reviews.map(review => review.courseCode.toUpperCase())])];
     return codes.map(code => {
       const courseReviews = reviews.filter(review => review.courseCode.toUpperCase() === code);
       return {code, ...getCourse(code), reviews: courseReviews, score: average(courseReviews)};
-    }).filter(course => `${course.code} ${course.name}`.toLowerCase().includes(courseSearch.trim().toLowerCase()));
-  }, [reviews, courseSearch]);
+    }).filter(course => `${course.code} ${course.name}`.toLowerCase().includes(courseSearch.trim().toLowerCase())).sort((a, b) => {
+      if (courseSort === 'name') return a.name.localeCompare(b.name);
+      if (courseSort === 'reviews') return b.reviews.length - a.reviews.length;
+      if (courseSort === 'highest' || courseSort === 'lowest') {
+        if (!a.reviews.length || !b.reviews.length) return Boolean(b.reviews.length) - Boolean(a.reviews.length);
+        return courseSort === 'highest' ? Number(b.score) - Number(a.score) : Number(a.score) - Number(b.score);
+      }
+      return 0;
+    });
+  }, [reviews, courseSearch, courseSort]);
 
-  const distribution = [5, 4, 3, 2, 1].map(value => ({
-    value,
-    total: reviews.filter(review => review.rating === value).length,
-  }));
-  const maxRatingCount = Math.max(...distribution.map(item => item.total), 1);
   const selectedCourseReviews = reviews.filter(review => review.courseCode.toUpperCase() === activeCourseCode);
-  const lookupReviews = reviews.filter(review => review.courseCode.toUpperCase() === lookupCode.trim().toUpperCase());
+  const courseDistribution = [5, 4, 3, 2, 1].map(value => ({
+    value,
+    total: selectedCourseReviews.filter(review => review.rating === value).length,
+  }));
+  const maxCourseRatingCount = Math.max(...courseDistribution.map(item => item.total), 1);
   const ownCourseReview = selectedCourseReviews.find(review => review.owner === 'you');
 
   function openEditor(review = null, courseCode = '') {
@@ -206,9 +212,9 @@ function App() {
     setReviews(seed);
     setSearch('');
     setCourseSearch('');
-    setLookupCode('CSEN701');
+    setCourseSort('default');
     setRating('all');
-    setReviewScope('all');
+    setReviewCourse('all');
     setEditor(null);
     setNotice('Example data restored.');
   }
@@ -218,10 +224,10 @@ function App() {
       <button className="logo" onClick={() => navigateTo('top')}>Course Review Board</button>
       <div className="side-caption">Browse</div>
       <button className={tab === 'Overview' ? 'active' : ''} onClick={() => navigateTo('top')}><Icon name="home"/>Discover</button>
-      <button className={tab === 'Browse reviews' ? 'active' : ''} onClick={() => {setReviewScope('all'); navigateTo('reviews');}}><Icon name="reviews"/>Student reviews</button>
+      <button className={tab === 'Browse reviews' ? 'active' : ''} onClick={() => navigateTo('reviews')}><Icon name="reviews"/>Student reviews</button>
       <button onClick={() => openEditor()}><Icon name="add"/>Write a review</button>
       <div className="side-caption side-caption-lower">My activity</div>
-      <button className={reviewScope === 'mine' && tab === 'Browse reviews' ? 'active' : ''} onClick={() => {setReviewScope('mine'); navigateTo('reviews');}}><Icon name="mine"/>Your reviews</button>
+      <button className={tab === 'Your reviews' ? 'active' : ''} onClick={() => navigateTo('mine')}><Icon name="mine"/>Your reviews</button>
       <div className="sidebar-bottom">Signed in as <strong>You</strong></div>
     </aside>
 
@@ -229,7 +235,7 @@ function App() {
       {notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice('')} aria-label="Dismiss message">×</button></div>}
 
       {activeCourseCode ? <>
-        <button type="button" className="back-link" onClick={() => navigateTo('reviews')}><span>←</span> All reviews</button>
+        <button type="button" className="back-link" onClick={() => navigateTo(tab === 'Overview' ? 'top' : tab === 'Your reviews' ? 'mine' : 'reviews')}><span>←</span> {tab === 'Overview' ? 'All courses' : tab === 'Your reviews' ? 'Your reviews' : 'Student reviews'}</button>
         <header className="course-hero">
           <div className="course-hero-copy">
             <p className="course-id">{activeCourseCode}</p>
@@ -239,14 +245,14 @@ function App() {
               <button className="primary-button" onClick={() => openEditor(ownCourseReview, activeCourseCode)}>{ownCourseReview ? 'Edit your review' : 'Write a review'}</button>
             </div>
           </div>
-          <div className="course-score-card">
-            <div className="score-label">Student rating</div>
-            <div className="score-line"><StarIcon /><strong>{average(selectedCourseReviews)}</strong><span className="rating-unit">out of 5</span></div>
-            <span className="score-caption">{selectedCourseReviews.length} {selectedCourseReviews.length === 1 ? 'review' : 'reviews'}</span>
-          </div>
         </header>
 
         <div className="course-details-grid">
+          <section className="panel course-rating-panel">
+            <div className="section-heading"><div><h2>Ratings</h2><p className="section-description">Reviews for {activeCourseCode}</p></div><div className="average-badge course-average-badge"><StarIcon /><strong>{average(selectedCourseReviews)}</strong><small>out of 5</small></div></div>
+            <div className="distribution">{courseDistribution.map(item => <div className="distribution-row" key={item.value}><span>{item.value}</span><div className="distribution-track"><i style={{width: `${item.total / maxCourseRatingCount * 100}%`}} /></div><small>{item.total}</small></div>)}</div>
+            <p className="panel-footnote">Based on {selectedCourseReviews.length} student {selectedCourseReviews.length === 1 ? 'review' : 'reviews'}.</p>
+          </section>
           <section className="panel teaching-history">
             <h2>Teaching history</h2>
             <p className="section-description">Teaching teams from the last two academic years.</p>
@@ -270,57 +276,59 @@ function App() {
         </div>
       </> : <>
         <header className="welcome-head">
-          <div className="welcome-copy"><h1>Course reviews</h1><p>Browse feedback before choosing a course.</p></div>
+          <div className="welcome-copy"><h1>{tab === 'Overview' ? 'Courses' : tab === 'Your reviews' ? 'Your reviews' : 'Student reviews'}</h1><p>{tab === 'Overview' ? 'Find a course, compare ratings, and see who teaches it.' : tab === 'Your reviews' ? 'Manage the feedback you have shared.' : 'Read what students say about their courses.'}</p></div>
           <button className="primary-button welcome-cta" onClick={() => openEditor()}>Write a review</button>
         </header>
+
+        {tab === 'Overview' && <>
+
+        <div className="stat-strip" aria-label="Review summary">
+          <div className="summary-stat"><div><strong>{reviews.length}</strong><span>Student reviews</span></div><button className="text-button" onClick={() => navigateTo('reviews')}>View all student reviews <span aria-hidden="true">→</span></button></div>
+          <div className="summary-stat"><div><strong>{new Set(reviews.filter(review => review.owner === 'you').map(review => review.courseCode.toUpperCase())).size}</strong><span>Courses you've rated</span></div><button className="text-button" onClick={() => navigateTo('mine')}>View your reviews <span aria-hidden="true">→</span></button></div>
+        </div>
 
         <section className="course-finder" aria-label="Find a course">
           <div className="finder-field"><label htmlFor="course-search">Find a course</label><input id="course-search" value={courseSearch} onChange={event => setCourseSearch(event.target.value)} placeholder="Search by course name or code" /></div>
         </section>
 
-        <div className="stat-strip" aria-label="Community summary">
-          <span><strong>{reviews.length}</strong> student reviews</span><i />
-          <span><strong>{new Set(reviews.map(review => review.courseCode.toUpperCase())).size}</strong> courses rated</span><i />
-          <span><strong>{average(reviews)}</strong> average score <small>/ 5</small></span>
-        </div>
-
         <section className="course-discovery" id="discover-courses">
-          <div className="section-heading discovery-heading"><div><h2>Courses</h2><p className="section-description">Select a course for reviews and teaching history.</p></div><button className="subtle-button" onClick={() => setCourseSearch('')}>Show all courses</button></div>
+          <div className="section-heading discovery-heading"><div><h2>Courses</h2><p className="section-description">Select a course for reviews and teaching history.</p></div><label className="rating-filter"><span>Sort by</span><select value={courseSort} onChange={event => setCourseSort(event.target.value)}><option value="default">Default order</option><option value="highest">Highest rated</option><option value="lowest">Lowest rated</option><option value="reviews">Most reviewed</option><option value="name">Course name A–Z</option></select></label></div>
           {courseList.length ? <div className="course-grid">{courseList.map(course => <button className="course-card" key={course.code} onClick={() => openCourse(course.code)}>
             <span className="course-code">{course.code}</span>
-            <span className="course-row-copy"><strong>{course.name}</strong><small>{course.description}</small></span>
+            <span className="course-row-copy"><strong>{course.name}</strong><small>{course.description.length > 80 ? `${course.description.slice(0, 77).replace(/\s+\S*$/, '')}…` : course.description}</small></span>
             <span className="course-row-score"><strong>{course.score}</strong><small>out of 5</small></span>
             <span className="card-reviews">{course.reviews.length} {course.reviews.length === 1 ? 'review' : 'reviews'}</span>
             <span className="course-row-open">View course</span>
           </button>)}</div> : <div className="empty-state course-empty"><strong>No courses match “{courseSearch}”</strong><p>Try a course code or a shorter search.</p></div>}
         </section>
 
-        <section className="review-list panel" id="review-list">
-          <div className="section-heading reviews-heading"><div><h2>{reviewScope === 'mine' ? 'Your reviews' : 'Student reviews'}</h2><p className="section-description">Search by course, reviewer, or comment.</p></div><button className="outline-button" onClick={reset}>Reset demo</button></div>
-          <div className="review-filters"><label className="review-search"><input value={search} onChange={event => setSearch(event.target.value)} aria-label="Search reviews" placeholder="Search reviews" /></label><label className="rating-filter"><span>Rating</span><select value={rating} onChange={event => setRating(event.target.value)}><option value="all">All ratings</option>{[5, 4, 3, 2, 1].map(value => <option key={value} value={value}>{value} stars</option>)}</select></label></div>
+        </>}
+
+        {tab === 'Browse reviews' && <section className="review-list panel" id="review-list">
+          <div className="section-heading reviews-heading"><div><h2>Student reviews</h2><p className="section-description">Search by course, reviewer, or comment.</p></div><button className="outline-button" onClick={reset}>Reset demo</button></div>
+          <div className="review-filters"><label className="review-search"><input value={search} onChange={event => setSearch(event.target.value)} aria-label="Search reviews" placeholder="Search reviews" /></label><label className="rating-filter course-filter"><span>Course</span><select value={reviewCourse} onChange={event => setReviewCourse(event.target.value)}><option value="all">All courses</option>{[...new Set(reviews.map(review => review.courseCode.toUpperCase()))].sort().map(code => <option key={code} value={code}>{code} · {getCourse(code).name}</option>)}</select></label><label className="rating-filter"><span>Rating</span><select value={rating} onChange={event => setRating(event.target.value)}><option value="all">All ratings</option>{[5, 4, 3, 2, 1].map(value => <option key={value} value={value}>{value} stars</option>)}</select></label></div>
           <div className="review-feed">{result.map(review => <article className="review-row" key={review.id}>
             <div className="review-avatar">{review.name === 'You' ? 'Y' : review.name[0]}</div>
             <div className="review-main"><div className="review-row-meta"><button className="course-inline-link" onClick={() => openCourse(review.courseCode)}><strong>{review.courseCode}</strong><span>{getCourse(review.courseCode).name}</span></button><time dateTime={review.date}>{formatDate(review.date)}</time></div>
               <div className="review-rating"><span className="rating-value">{review.rating} / 5</span></div><p className="review-comment">{review.comment || 'No comment provided.'}</p>
               <div className="review-byline">Shared by <strong>{review.name === 'You' ? 'you' : review.name}</strong>{review.owner === 'you' && <button className="text-button" onClick={() => openEditor(review)}>Edit</button>}</div>
             </div>
-          </article>)}{result.length === 0 && <div className="empty-state"><strong>No reviews found</strong><p>Try a different search or rating filter.</p><button className="text-button" onClick={() => {setSearch(''); setRating('all'); setReviewScope('all');}}>Clear filters</button></div>}</div>
+          </article>)}{result.length === 0 && <div className="empty-state"><strong>No reviews found</strong><p>Try a different search, course, or rating filter.</p><button className="text-button" onClick={() => {setSearch(''); setRating('all'); setReviewCourse('all');}}>Clear filters</button></div>}</div>
           <div className="feed-footer"><span>Showing {result.length} of {reviews.length} reviews</span><button className="text-button" onClick={() => openEditor()}>Write a review</button></div>
         </section>
-        <section className="community-grid">
-          <div className="panel pulse-panel">
-            <div className="section-heading"><div><h2>Ratings</h2><p className="section-description">All course reviews</p></div><div className="average-badge"><strong>{average(reviews)}</strong><small>out of 5</small></div></div>
-            <div className="distribution">{distribution.map(item => <div className="distribution-row" key={item.value}><span>{item.value}</span><div className="distribution-track"><i style={{width: `${item.total / maxRatingCount * 100}%`}} /></div><small>{item.total}</small></div>)}</div>
-            <p className="panel-footnote">Based on {reviews.length} student {reviews.length === 1 ? 'review' : 'reviews'}.</p>
-          </div>
-          <div className="panel lookup-panel">
-            <h2>Course lookup</h2><p className="section-description">Enter a code to see its average rating.</p>
-            <label htmlFor="lookup-code">Course code</label><div className="lookup-input"><input id="lookup-code" value={lookupCode} onChange={event => setLookupCode(event.target.value)} placeholder="e.g. CSEN701" /><button aria-label="Open matching course" onClick={() => lookupCode.trim() && openCourse(lookupCode)}>→</button></div>
-            <div className="lookup-result"><span>Overall rating</span><strong>{average(lookupReviews)}</strong><small>{lookupReviews.length} {lookupReviews.length === 1 ? 'review' : 'reviews'}</small></div>
-            {lookupCode.trim() && <button className="lookup-course-link" onClick={() => openCourse(lookupCode)}>View course details</button>}
-            <p className="lookup-note">You can also search by course name above.</p>
-          </div>
+        }
+        {tab === 'Your reviews' && <section className="review-list panel your-reviews" id="your-reviews">
+          <div className="section-heading reviews-heading"><div><h2>Your reviews</h2><p className="section-description">Reviews you have shared.</p></div><button className="text-button" onClick={() => openEditor()}>Write a review</button></div>
+          <div className="review-feed">{reviews.filter(review => review.owner === 'you').map(review => <article className="review-row" key={review.id}>
+            <div className="review-avatar">Y</div>
+            <div className="review-main"><div className="review-row-meta"><button className="course-inline-link" onClick={() => openCourse(review.courseCode)}><strong>{review.courseCode}</strong><span>{getCourse(review.courseCode).name}</span></button><time dateTime={review.date}>{formatDate(review.date)}</time></div>
+              <div className="review-rating"><span className="rating-value">{review.rating} / 5</span></div><p className="review-comment">{review.comment || 'No comment provided.'}</p>
+              <button className="text-button" onClick={() => openEditor(review)}>Edit your review</button>
+            </div>
+          </article>)}</div>
+          {!reviews.some(review => review.owner === 'you') && <div className="empty-state"><strong>No reviews yet</strong><p>Your reviews will appear here after you post one.</p></div>}
         </section>
+        }
 
         <footer className="page-footer"><span>Course Review Board</span><button onClick={reset}>Restore example data</button></footer>
       </>}
